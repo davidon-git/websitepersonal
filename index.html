@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAVIDOS v1.0 - Personal Terminal</title>
+<style>
+  /* Using system monospace fonts for reliability */
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Courier New', 'Courier', 'Liberation Mono', monospace;
+    overflow: hidden;
+  }
+
+  /* === CRT MONITOR === */
+  .monitor {
+    width: min(95vw, 960px);
+    height: min(90vh, 720px);
+    background: #111;
+    border: 12px solid #222;
+    border-radius: 16px;
+    padding: 8px;
+    box-shadow:
+      0 0 60px rgba(51, 255, 51, 0.06),
+      inset 0 0 40px rgba(0,0,0,0.8),
+      0 20px 60px rgba(0,0,0,0.5);
+    position: relative;
+  }
+
+  .screen {
+    width: 100%;
+    height: 100%;
+    background: #0a0a0a;
+    border-radius: 8px;
+    padding: 24px 20px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    color: #33ff33;
+    font-size: 18px;
+    line-height: 1.35;
+    scrollbar-width: none;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+
+  /* Scanlines */
+  .screen::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 2px,
+      rgba(0,0,0,0.12) 2px,
+      rgba(0,0,0,0.12) 4px
+    );
+    pointer-events: none;
+    border-radius: 8px;
+    z-index: 10;
+  }
+
+  /* Screen glow */
+  .screen::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,20,0,0.3) 100%);
+    pointer-events: none;
+    border-radius: 8px;
+    z-index: 9;
+  }
+
+  /* Text glow */
+  .glow {
+    text-shadow: 0 0 6px rgba(51, 255, 51, 0.4);
+  }
+
+  /* Scanline flicker */
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.995; }
+    92% { opacity: 0.97; }
+  }
+  .screen {
+    animation: flicker 0.15s infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .cursor {
+    display: inline-block;
+    width: 12px;
+    height: 22px;
+    background: #33ff33;
+    margin-left: 2px;
+    animation: blink 0.6s step-end infinite;
+    vertical-align: text-bottom;
+    box-shadow: 0 0 8px rgba(51,255,51,0.6);
+  }
+
+  .line { min-height: 24px; white-space: pre-wrap; word-break: break-all; }
+
+  /* Different text colors */
+  .c-green   { color: #33ff33; }
+  .c-amber   { color: #ffb000; }
+  .c-red     { color: #ff4444; }
+  .c-cyan    { color: #44ffff; }
+  .c-white   { color: #cccccc; }
+  .c-yellow  { color: #ffff44; }
+  .c-blue    { color: #4488ff; }
+  .c-magenta { color: #ff44ff; }
+  .c-dim     { color: #1a661a; }
+  .c-gray    { color: #666666; }
+
+  /* ASCII art should not glow too much */
+  .ascii { text-shadow: none; color: #33ff33; }
+
+  /* Input line styling */
+  .input-line { display: flex; align-items: center; flex-wrap: wrap; }
+  .prompt { color: #33ff33; font-weight: bold; }
+  #input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #33ff33;
+    font-family: 'Courier New', 'Courier', 'Liberation Mono', monospace;
+    font-size: 18px;
+    flex: 1;
+    caret-color: transparent;
+    text-shadow: 0 0 6px rgba(51, 255, 51, 0.4);
+    min-width: 50px;
+  }
+
+  /* Progress bar */
+  .progress-container {
+    width: 100%;
+    max-width: 500px;
+    height: 18px;
+    border: 1px solid #33ff33;
+    background: transparent;
+    margin: 8px 0;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #33ff33;
+    transition: width 0.15s;
+    box-shadow: 0 0 10px rgba(51,255,51,0.5);
+  }
+  .progress-text {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    text-align: center;
+    line-height: 18px;
+    color: #0a0a0a;
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  /* Monitor power LED */
+  .power-led {
+    position: absolute;
+    bottom: -18px;
+    right: 20px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #33ff33;
+    box-shadow: 0 0 10px rgba(51,255,51,0.5);
+  }
+  .power-label {
+    position: absolute;
+    bottom: -20px;
+    right: 36px;
+    color: #333;
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="monitor">
+  <div class="screen" id="screen">
+    <div id="output"></div>
+    <div class="input-line" id="inputLine" style="display:none;">
+      <span class="prompt glow" id="prompt">C:\&gt;</span>
+      <input type="text" id="input" autofocus spellcheck="false" autocomplete="off" />
+    </div>
+  </div>
+  <div class="power-led"></div>
+  <div class="power-label">POWER</div>
+</div>
+
+<script>
+(function() {
+  const screen = document.getElementById('screen');
+  const output = document.getElementById('output');
+  const inputLine = document.getElementById('inputLine');
+  const input = document.getElementById('input');
+  const promptSpan = document.getElementById('prompt');
+
+  // ─── Utility ──────────────────────────────────────────────────
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const EL = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+
+  function typeText(line, text, cls = 'c-green', speed = 12) {
+    return new Promise(async (resolve) => {
+      let i = 0;
+      const chars = [...text];
+      const span = document.createElement('span');
+      span.className = cls + ' glow';
+      line.appendChild(span);
+      const fn = () => {
+        if (i >= chars.length) { resolve(); return; }
+        span.textContent += chars[i++];
+        scrollBottom();
+        const delay = chars[i-1] === ' ' ? speed : speed + Math.random() * 8;
+        setTimeout(fn, delay);
+      };
+      fn();
+    });
+  }
+
+  function addLine(cls = 'c-green') {
+    const line = EL('div', 'line ' + cls);
+    output.appendChild(line);
+    return line;
+  }
+
+  function scrollBottom() {
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  // ─── Boot Phases ──────────────────────────────────────────────
+
+  async function boot() {
+    output.innerHTML = '';
+    inputLine.style.display = 'none';
+
+    // ─── Phase 1: POST ─────────────────────────────────────
+    await sleep(400);
+
+    const logo = [
+      '╔══════════════════════════════════════════════════════╗',
+      '║                                                     ║',
+      '║  ██████╗ █████╗ ██╗   ██╗██╗██████╗ ██████╗ ███████╗ ║',
+      '║  ██╔══██╗██╔══██╗██║   ██║██║██╔══██╗██╔══██╗██╔════╝ ║',
+      '║  ██║  ██║███████║██║   ██║██║██║  ██║██║  ██║███████╗ ║',
+      '║  ██║  ██║██╔══██║╚██╗ ██╔╝██║██║  ██║██║  ██║╚════██║ ║',
+      '║  ██████╔╝██║  ██║ ╚████╔╝ ██║██████╔╝██████╔╝███████║ ║',
+      '║  ╚═════╝ ╚═╝  ╚═╝  ╚═══╝  ╚═╝╚═════╝ ╚═════╝ ╚══════╝ ║',
+      '║                                                     ║',
+      '║              P E R S O N A L   O S                 ║',
+      '║                  Version 0.0.1                      ║',
+      '║                                                     ║',
+      '╚══════════════════════════════════════════════════════╝'
+    ];
+
+    for (const line of logo) {
+      const l = addLine('c-green');
+      l.textContent = line;
+      await sleep(30);
+    }
+    scrollBottom();
+
+    await sleep(600);
+
+    // BIOS messages
+    const bios = [
+      { text: 'DAVIDOS BIOS v1.0 - Copyright 2025 David Systems Inc.', cls: 'c-green' },
+      { text: 'CPU: RetroCore(TM) 8088 @ 4.77 MHz', cls: 'c-amber' },
+      { text: '', cls: '' },
+    ];
+    for (const b of bios) {
+      const l = addLine(b.cls);
+      await typeText(l, b.text, b.cls, 10);
+      await sleep(40);
+    }
+
+    // Memory test
+    const memLine = addLine('c-green');
+    await typeText(memLine, 'Memory Test: ', 'c-green', 3);
+    for (let mem = 0; mem <= 640; mem += 8) {
+      await sleep(1);
+      memLine.textContent = 'Memory Test: ' + mem + 'K OK';
+      scrollBottom();
+    }
+    await sleep(300);
+
+    const postMessages = [
+      'IDE Primary Master: DavidOS Personal Kernel v1.0',
+      'Floppy Drive 0: [N/A]',
+      'PS/2 Keyboard: Detected',
+      'CMOS Battery: OK',
+      'System Memory: 640K Base + 384K Extended = 1024K Total',
+    ];
+    for (const msg of postMessages) {
+      const l = addLine('c-green');
+      await typeText(l, msg, 'c-green', 8);
+      await sleep(80);
+    }
+
+    // Boot prompt
+    await sleep(400);
+    const startLine = addLine('c-amber');
+    await typeText(startLine, 'Press any key to boot DAVIDOS...', 'c-amber', 16);
+
+    await waitForKey();
+    output.innerHTML = '';
+    scrollBottom();
+    await sleep(200);
+
+    // ─── Phase 2: Boot ─────────────────────────────────────
+    const bootHeader = addLine('c-cyan');
+    await typeText(bootHeader, '╔══════════════════════════════════════╗', 'c-cyan', 5);
+    const bootTitle = addLine('c-cyan');
+    await typeText(bootTitle, '║   DAVIDOS Personal Shell v1.0.0      ║', 'c-cyan', 5);
+    const bootFooter = addLine('c-cyan');
+    await typeText(bootFooter, '╚══════════════════════════════════════╝', 'c-cyan', 5);
+    await sleep(300);
+
+    const drivers = [
+      { name: 'kernel.sys',     ok: true },
+      { name: 'console.sys',    ok: true },
+      { name: 'display.sys',    ok: true },
+      { name: 'keyboard.sys',   ok: true },
+      { name: 'memory.sys',     ok: true },
+      { name: 'personality.dll', ok: true },
+      { name: 'network.sys',    ok: true },
+      { name: 'projects.dat',   ok: true },
+      { name: 'skills.cfg',     ok: true },
+      { name: 'userpref.ini',   ok: true },
+    ];
+
+    for (const d of drivers) {
+      const l = addLine('c-green');
+      await typeText(l, '  Loading ' + d.name + '... ', 'c-green', 6);
+      const status = addLine('c-green');
+      status.textContent = '';
+      // inline replacement
+      l.textContent = '  Loading ' + d.name + '... [' + (d.ok ? '  OK  ' : 'FAILED') + ']';
+      l.className = 'line ' + (d.ok ? 'c-green' : 'c-red');
+      await sleep(120);
+    }
+
+    await sleep(300);
+
+    // Progress bar
+    const progContainer = addLine('c-green');
+    const container = document.createElement('div');
+    container.className = 'progress-container';
+    const fill = document.createElement('div');
+    fill.className = 'progress-fill';
+    const pText = document.createElement('div');
+    pText.className = 'progress-text';
+    pText.textContent = '0%';
+    container.appendChild(fill);
+    container.appendChild(pText);
+    progContainer.appendChild(container);
+
+    for (let pct = 0; pct <= 100; pct += 2) {
+      fill.style.width = pct + '%';
+      pText.textContent = pct + '%';
+      await sleep(20 + Math.random() * 25);
+      scrollBottom();
+    }
+    await sleep(400);
+
+    const ready = addLine('c-green');
+    await typeText(ready, '', 'c-green', 3);
+    ready.textContent = '';
+
+    // Welcome message
+    const welcome = addLine('c-cyan');
+    await typeText(welcome, '╔══════════════════════════════════════╗', 'c-cyan', 5);
+    const w2 = addLine('c-cyan');
+    await typeText(w2, '║     Welcome to DAVIDOS v1.0!          ║', 'c-cyan', 5);
+    const w3 = addLine('c-cyan');
+    await typeText(w3, '╚══════════════════════════════════════╝', 'c-cyan', 5);
+    await sleep(400);
+
+    // ─── Phase 3: DOS Executive ────────────────────────────
+    startDOS();
+  }
+
+  function startDOS() {
+    output.innerHTML = '';
+    scrollBottom();
+
+    // Show startup hint
+    const verLine = addLine('c-green');
+    verLine.textContent = 'DAVIDOS Personal Shell [Version 1.0.0]';
+    const crLine = addLine('c-gray');
+    crLine.textContent = '(C) Copyright 2025 David Systems Inc.  All rights reserved.';
+    addLine('');
+
+    // Type "Type HELP for available commands."
+    const l = addLine('c-amber');
+    l.textContent = 'Type HELP for available commands.';
+    addLine('');
+
+    showPrompt();
+  }
+
+  // ─── Prompt & Input ──────────────────────────────────────────
+
+  let waitingForKey = false;
+  let keyResolve = null;
+  let cmdHistory = [];
+  let historyIdx = -1;
+  let skipPrompt = false;
+
+  function waitForKey() {
+    return new Promise(resolve => {
+      waitingForKey = true;
+      keyResolve = resolve;
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (waitingForKey) {
+      waitingForKey = false;
+      if (keyResolve) keyResolve();
+      keyResolve = null;
+      return;
+    }
+  });
+
+  function showPrompt() {
+    inputLine.style.display = 'flex';
+    input.focus();
+    scrollBottom();
+  }
+
+  function focusInput() {
+    input.focus();
+  }
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => input.focus(), 10);
+  });
+
+  input.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const cmd = input.value.trim();
+      input.value = '';
+      if (cmd) {
+        cmdHistory.push(cmd);
+        historyIdx = cmdHistory.length;
+      }
+
+      // Show what was typed
+      const promptLine = addLine('c-green');
+      promptLine.textContent = 'C:\\>' + cmd;
+
+      await processCommand(cmd);
+      if (!skipPrompt) showPrompt();
+      skipPrompt = false;
+    }
+    // History navigation
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (cmdHistory.length > 0) {
+        historyIdx = Math.max(0, historyIdx - 1);
+        input.value = cmdHistory[historyIdx];
+      }
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIdx < cmdHistory.length - 1) {
+        historyIdx++;
+        input.value = cmdHistory[historyIdx];
+      } else {
+        historyIdx = cmdHistory.length;
+        input.value = '';
+      }
+    }
+  });
+
+  // ─── Command Processor ────────────────────────────────────────
+
+  async function processCommand(cmd) {
+    const parts = cmd.split(/\s+/);
+    const command = parts[0].toLowerCase();
+    const args = parts.slice(1).join(' ');
+
+    switch (command) {
+
+      case 'help':
+        showHelp();
+        break;
+
+      case 'whoami':
+        await typeCommandOutput('David.');
+        await typeCommandOutput('Researcher, ..., ....');
+        await typeCommandOutput('Interested in science, technology, history, and ideas.');
+        break;
+
+      case 'dir':
+      case 'ls':
+        showDir();
+        break;
+
+      case 'type':
+      case 'cat':
+        if (!args) {
+          await typeCommandOutput('Syntax: TYPE <filename>', 'c-amber');
+        } else {
+          showFile(args);
+        }
+        break;
+
+      case 'cls':
+      case 'clear':
+        output.innerHTML = '';
+        break;
+
+      case 'date':
+        await typeCommandOutput('The current date is: ' + new Date().toLocaleDateString('en-US', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        }));
+        break;
+
+      case 'time':
+        await typeCommandOutput('The current time is: ' + new Date().toLocaleTimeString('en-US'));
+        break;
+
+      case 'ver':
+        await typeCommandOutput('');
+        await typeCommandOutput('DAVIDOS Personal Shell [Version 1.0.0]');
+        await typeCommandOutput('Copyright 2025 David Systems Inc.');
+        break;
+
+      case 'neofetch':
+      case 'sysinfo':
+        await showNeofetch();
+        break;
+
+      case 'projects':
+        await showProjects();
+        break;
+
+      case 'contact':
+        await typeCommandOutput('');
+        await typeCommandOutput('📧  Email:     [e-mail@davidvanoeveren.nl]');
+        await typeCommandOutput('🐙  GitHub:    [github.com/davidon-git]');
+        await typeCommandOutput('🐦  Twitter/X: [@leege]');
+        await typeCommandOutput('🌐  Web:       [davidvanoeveren.nl]');
+        break;
+
+      case 'sudo':
+        const sudoMsg = addLine('c-red');
+        sudoMsg.textContent = '';
+        await typeText(sudoMsg, '......', 'c-red', 15);
+        await sleep(200);
+        const face = addLine('c-yellow');
+        face.textContent = '         (╯°□°)╯︵ ┻━┻';
+        break;
+
+      case 'reboot':
+        skipPrompt = true;
+        inputLine.style.display = 'none';
+        await typeCommandOutput('Rebooting DAVIDOS...', 'c-amber');
+        await sleep(800);
+        await boot();
+        break;
+
+      case 'shutdown':
+        skipPrompt = true;
+        inputLine.style.display = 'none';
+        await typeCommandOutput('It\'s now safe to turn off your computer.', 'c-amber');
+        await typeCommandOutput('', 'c-amber');
+        const shutdownLogo = [
+          '  ╔════════════════════════════╗',
+          '  ║     SYSTEM HALTED          ║',
+          '  ║   Press [REBOOT] to restart ║',
+          '  ╚════════════════════════════╝'
+        ];
+        for (const l of shutdownLogo) {
+          const line = addLine('c-amber');
+          line.textContent = l;
+          await sleep(50);
+        }
+        break;
+
+      case 'echo':
+        if (args) {
+          await typeCommandOutput(args);
+        }
+        break;
+
+      case 'mem':
+        await typeCommandOutput('');
+        await typeCommandOutput('Memory Information:');
+        await typeCommandOutput('  Base Memory:     640K');
+        await typeCommandOutput('  Extended Memory: 384K');
+        await typeCommandOutput('  Total:          1024K');
+        await typeCommandOutput('  Available:       ~512K');
+        break;
+
+      case 'tree':
+        await showTree();
+        break;
+
+      case 'matrix':
+        await matrixRain();
+        break;
+
+      case 'calc':
+        await typeCommandOutput('Simple Calculator (type an expression):', 'c-cyan');
+        await typeCommandOutput('  Example: 2 + 2 * 3', 'c-gray');
+        try {
+          const result = Function('"use strict"; return (' + args + ')')();
+          await typeCommandOutput('  Result: ' + result);
+        } catch(e) {
+          await typeCommandOutput('  Error: Invalid expression', 'c-red');
+        }
+        break;
+
+      case 'cowsay':
+        await cowsayCmd(args || 'Moo!');
+        break;
+
+      case 'figlet':
+      case 'banner':
+        await typeCommandOutput('  _  _    ___   _   _   ___   _     ___   ___');
+        await typeCommandOutput(' | \\| |  / _ \\ | \\ | | / _\\ | |   / __| / _ \\');
+        await typeCommandOutput(' | .` | | (_) ||  \\| || (_| | |__ \\__ \\| (_) |');
+        await typeCommandOutput(' |_|\\_|  \\___/ |_|\\_| \\__/ |____||___/ \\___/');
+        await typeCommandOutput('  (FIGlet not available — ASCII fallback)');
+        break;
+
+      case 'pwd':
+        await typeCommandOutput('C:\\');
+        break;
+
+      case 'hostname':
+        await typeCommandOutput('DAVIDOS-PC');
+        break;
+
+      case 'ipconfig':
+      case 'ifconfig':
+        await typeCommandOutput('');
+        await typeCommandOutput('DAVIDOS IP Configuration');
+        await typeCommandOutput('  Local Area Connection:');
+        await typeCommandOutput('    IPv4 Address: 192.168.1.42');
+        await typeCommandOutput('    Subnet Mask:  255.255.255.0');
+        await typeCommandOutput('    Gateway:      192.168.1.1');
+        break;
+
+      case 'ping':
+        if (!args) {
+          await typeCommandOutput('Usage: PING <hostname>', 'c-amber');
+        } else {
+          await typeCommandOutput('');
+          await typeCommandOutput('Pinging ' + args + ' [127.0.0.1] with 32 bytes of data:');
+          for (let i = 0; i < 4; i++) {
+            const ms = Math.floor(Math.random() * 30 + 5);
+            await typeCommandOutput('  Reply from 127.0.0.1: bytes=32 time=' + ms + 'ms TTL=128');
+            await sleep(300);
+          }
+          await typeCommandOutput('');
+          await typeCommandOutput('Ping statistics for 127.0.0.1:');
+          await typeCommandOutput('  Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)');
+        }
+        break;
+
+      case 'fortune':
+        const fortunes = [
+          'blablabla',
+          'blablabl.',
+          'blablabla.',
+
+        ];
+        await typeCommandOutput('');
+        await typeCommandOutput('  "' + fortunes[Math.floor(Math.random() * fortunes.length)] + '"');
+        await typeCommandOutput('');
+        break;
+
+      case 'easter':
+      case 'egg':
+        await typeCommandOutput('');
+        await typeCommandOutput('  🥚 You found an egg!');
+        await typeCommandOutput('  Congratulations, you are officially curious.');
+        break;
+
+      case '':
+        // Just pressing Enter
+        break;
+
+      default:
+        const l = addLine('c-red');
+        l.textContent = '';
+        await typeText(l, '\'' + command + '\' is not recognized as an internal or external command,\noperable program or batch file.', 'c-red', 8);
+    }
+  }
+
+  // ─── Help Output ──────────────────────────────────────────────
+
+  function showHelp() {
+    const cmds = [
+      ['WHOAMI',    'Display user information'],
+      ['DIR / LS',  'List files and directories'],
+      ['TYPE / CAT','View file contents'],
+      ['CLS / CLEAR','Clear the screen'],
+      ['DATE',      'Show current date'],
+      ['TIME',      'Show current time'],
+      ['VER',       'Show version information'],
+      ['NEOFETCH',  'Display system info with ASCII art'],
+      ['PROJECTS',  'List personal projects'],
+      ['CONTACT',   'Show contact information'],
+      ['SYSINFO',   'Alias for NEOFETCH'],
+      ['MEM',       'Show memory information'],
+      ['TREE',      'Display directory tree'],
+      ['PING',      'Ping a host'],
+      ['IPCONFIG',  'Show network configuration'],
+      ['ECHO',      'Echo text to the screen'],
+      ['HOSTNAME',  'Show computer name'],
+      ['CALC',      'Evaluate a math expression'],
+      ['FORTUNE',   'Display a random quote'],
+      ['COWSAY',    'Make a cow say something'],
+      ['MATRIX',    'Experience the Matrix'],
+      ['REBOOT',    'Restart the system'],
+      ['SHUTDOWN',  'Shut down the system'],
+    ];
+
+    addLine('');
+    const h = addLine('c-cyan');
+    h.textContent = '╔════════════════════════════════════════════════════╗';
+    const h2 = addLine('c-cyan');
+    h2.textContent = '║               AVAILABLE COMMANDS                  ║';
+    const h3 = addLine('c-cyan');
+    h3.textContent = '╚════════════════════════════════════════════════════╝';
+    addLine('');
+
+    for (const [c, d] of cmds) {
+      const line = addLine('c-green');
+      line.textContent = '  ' + c.padEnd(16) + d;
+    }
+    addLine('');
+  }
+
+  // ─── DIR Output ───────────────────────────────────────────────
+
+  function showDir() {
+    addLine('');
+    const header = addLine('c-cyan');
+    header.textContent = ' Directory of C:\\';
+    addLine('');
+
+    const files = [
+      { name: 'ABOUT.TXT',    size: '2.1K', date: '01-01-2025', dir: false },
+      { name: 'CONTACT.TXT',  size: '1.3K', date: '01-01-2025', dir: false },
+      { name: 'PROJECTS',     size: '',     date: '01-01-2025', dir: true  },
+      { name: 'SKILLS',       size: '',     date: '01-01-2025', dir: true  },
+      { name: 'BLOG',         size: '',     date: '01-01-2025', dir: true  },
+      { name: 'READ.ME',      size: '3.7K', date: '01-01-2025', dir: false },
+      { name: 'HELLO.EXE',    size: '42K',  date: '01-01-2025', dir: false },
+      { name: 'CONFIG.SYS',   size: '0.8K', date: '01-01-2025', dir: false },
+      { name: 'AUTOEXEC.BAT', size: '0.4K', date: '01-01-2025', dir: false },
+    ];
+
+    for (const f of files) {
+      const line = addLine('c-green');
+      if (f.dir) {
+        line.textContent = '  ' + f.date + '   <DIR>    ' + f.name;
+      } else {
+        line.textContent = '  ' + f.date + '          ' + f.size + '  ' + f.name;
+      }
+    }
+    addLine('');
+    const l2 = addLine('c-gray');
+    l2.textContent = '        9 File(s)';
+  }
+
+  // ─── TYPE / CAT Output ────────────────────────────────────────
+
+  function showFile(filename) {
+    const fn = filename.toUpperCase();
+    const files = {
+      'ABOUT.TXT': `  ╔══════════════════════════════╗
+  ║         ABOUT              ║
+  ╚══════════════════════════════╝
+
+  Hello. I'm David.
+
+  I build things. I break things. I learn things.
+
+  This is my space on the internet — a terminal
+  that represents how I think: structured, curious,
+  and a bit retro.
+
+  Welcome.`,
+
+      'CONTACT.TXT': `  ╔══════════════════════════════╗
+  ║         CONTACT            ║
+  ╚══════════════════════════════╝
+
+  Email:   [e-mail@davidvanoeveren.nl]
+  GitHub:  [....]
+  Web:     [davidvanoeveren.nl]
+
+  Feel free to reach out.`,
+
+      'READ.ME': `  ╔══════════════════════════════╗
+  ║         READ.ME            ║
+  ╚══════════════════════════════╝
+
+  DAVIDOS v1.0.0
+  Personal Terminal Operating System
+
+  This is a retro-style terminal emulator that
+  serves as a personal website.
+
+  Commands:    HELP
+  System:      NEOFETCH, VER, MEM
+  Navigation:  DIR, TYPE, CLS
+  Fun:         MATRIX, COWSAY, FORTUNE
+
+  ---
+  "The command line is the ultimate interface."`,
+
+      'CONFIG.SYS': `  ; DAVIDOS Configuration File
+  ; Last modified: 88-06-2026
+
+  DEVICE=C:\\SYSTEM\\CONSOLE.SYS
+  DEVICE=C:\\SYSTEM\\DISPLAY.SYS
+  DEVICE=C:\\SYSTEM\\KEYBOARD.SYS
+
+  FILES=30
+  BUFFERS=20
+  LASTDRIVE=Z
+  DOS=HIGH,UMB`,
+
+      'AUTOEXEC.BAT': `  @ECHO OFF
+  CLS
+  ECHO Loading DAVIDOS...
+  PATH=C:\\;C:\\SYSTEM;C:\\PROJECTS
+  PROMPT=$P$G
+  SET TEMP=C:\\TEMP
+  ECHO Welcome to DAVIDOS!
+  VER`,
+
+      'HELLO.EXE': `  Cannot run HELLO.EXE in terminal mode.
+  Try using the TYPE command on a .TXT file instead.
+
+  (But for the curious: it would print "Hello, world!")
+`,
+    };
+
+    // Check directories
+    const dirs = ['PROJECTS', 'SKILLS', 'BLOG'];
+    if (dirs.includes(fn)) {
+      addLine('');
+      const l = addLine('c-amber');
+      l.textContent = '  Accessing ' + fn + '...';
+      const l2 = addLine('c-green');
+      if (fn === 'PROJECTS') {
+        showProjectsInline();
+      } else if (fn === 'SKILLS') {
+        l2.textContent = '  Use the SKILLS or PROJECTS command to view these.';
+      } else {
+        l2.textContent = '  Directory is empty. Start writing!';
+      }
+      return;
+    }
+
+    if (files[fn]) {
+      addLine('');
+      const lines = files[fn].split('\n');
+      for (const l of lines) {
+        const line = addLine('c-green');
+        line.textContent = l;
+        // Slight typing effect for first few lines
+      }
+    } else {
+      const l = addLine('c-red');
+      l.textContent = '  File not found: ' + filename;
+    }
+  }
+
+  // ─── Projects ─────────────────────────────────────────────────
+
+  async function showProjects() {
+    await showProjectsInline();
+  }
+
+  async function showProjectsInline() {
+    addLine('');
+    const h = addLine('c-cyan');
+    h.textContent = '╔═══════════════════════════════════════════════╗';
+    const h2 = addLine('c-cyan');
+    h2.textContent = '║               PROJECTS                       ║';
+    const h3 = addLine('c-cyan');
+    h3.textContent = '╚═══════════════════════════════════════════════╝';
+    addLine('');
+
+    const projects = [
+      { name: 'DAVIDOS',        desc: 'Test website' },
+      { name: 'Project 1',  desc: 'Description a first project' },
+      { name: 'Project 2',   desc: 'Description a second project' },
+      { name: 'Project 3',  desc: 'Another cool thing' },
+    ];
+
+    for (const p of projects) {
+      const line = addLine('c-green');
+      line.textContent = '  [' + p.name + ']';
+      const d = addLine('c-gray');
+      d.textContent = '    ' + p.desc;
+    }
+    addLine('');
+    const tip = addLine('c-amber');
+    tip.textContent = '  Use TYPE to view individual project details.';
+  }
+
+  // ─── Tree ─────────────────────────────────────────────────────
+
+  async function showTree() {
+    const tree = [
+      'C:\\',
+      '  ├── ABOUT.TXT',
+      '  ├── AUTOEXEC.BAT',
+      '  ├── CONFIG.SYS',
+      '  ├── CONTACT.TXT',
+      '  ├── HELLO.EXE',
+      '  ├── READ.ME',
+      '  ├── PROJECTS\\',
+      '  │   ├── DAVIDOS\\',
+      '  │   │   ├── SRC\\',
+      '  │   │   └── DOCS\\',
+      '  │   ├── ALPHA\\',
+      '  │   └── BETA\\',
+      '  ├── SKILLS\\',
+      '  │   ├── CODING\\',
+      '  │   ├── DESIGN\\',
+      '  │   └── RESEARCH\\',
+      '  ├── BLOG\\',
+      '  └── SYSTEM\\',
+      '      ├── KERNEL.SYS',
+      '      ├── CONSOLE.SYS',
+      '      ├── DISPLAY.SYS',
+      '      └── KEYBOARD.SYS',
+    ];
+
+    addLine('');
+    for (const t of tree) {
+      const line = addLine('c-green');
+      line.textContent = t;
+      await sleep(25);
+    }
+  }
+
+  // ─── Neofetch ─────────────────────────────────────────────────
+
+  async function showNeofetch() {
+    addLine('');
+
+    const ascii = [
+      '            ..........',
+      '        ..\'\'          \'\'..',
+      '      .\'\'    .------.    \'\'.',
+      '     /     /        \\\\     \\\\',
+      '    |     |  ______  |     |',
+      '    |     | |      | |     |',
+      '     \\\\     \\\\|______|/     /',
+      '      \'\'.                .\'\'',
+      '        \'\'..          ..\'\'',
+      '            \'\'\'......\'\'\'',
+    ];
+
+    const info = [
+      '            OS: DAVIDOS v1.0.0',
+      '            Host: Personal Terminal',
+      '            Kernel: RetroCore 8088 4.77 MHz',
+      '            Shell: DAVIDOS Executive',
+      '            Resolution: 80x25 characters',
+      '            Terminal: VT-100 Compatible',
+      '            CPU: 8088 @ 4.77 MHz',
+      '            Memory: 640K / 1024K',
+      '            Theme: Green Phosphor',
+      '            Uptime: Since boot',
+      '            Packages: 20 commands',
+    ];
+
+    const maxLen = Math.max(ascii.length, info.length);
+    for (let i = 0; i < maxLen; i++) {
+      const line = addLine('c-green');
+      const a = ascii[i] || ' '.repeat(26);
+      const b = info[i] || '';
+      line.textContent = a + b;
+    }
+    addLine('');
+  }
+
+  // ─── Cowsay ───────────────────────────────────────────────────
+
+  async function cowsayCmd(message) {
+    const width = Math.min(message.length + 2, 50);
+    const border = ' ' + '‾'.repeat(width);
+    const bottom = ' ' + '_'.repeat(width);
+
+    const lines = [];
+    const words = message.split(' ');
+    let current = '';
+    for (const word of words) {
+      if ((current + ' ' + word).length <= width - 2) {
+        current += (current ? ' ' : '') + word;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+
+    addLine('');
+    const t = addLine('c-green');
+    t.textContent = ' ' + '_'.repeat(width);
+    for (const l of lines) {
+      const line = addLine('c-green');
+      const padded = l + ' '.repeat(width - l.length - 2);
+      line.textContent = '< ' + padded + ' >';
+    }
+    const b = addLine('c-green');
+    b.textContent = ' ' + '‾'.repeat(width);
+    const cow = [
+      '        \\   ^__^',
+      '         \\  (oo)\\_______',
+      '            (__)\\       )\\/|',
+      '                ||----w |',
+      '                ||     ||',
+    ];
+    for (const c of cow) {
+      const line = addLine('c-green');
+      line.textContent = c;
+    }
+    addLine('');
+  }
+
+  // ─── Matrix Rain ──────────────────────────────────────────────
+
+  async function matrixRain() {
+    const original = output.innerHTML;
+    output.innerHTML = '';
+    inputLine.style.display = 'none';
+
+    const cols = Math.floor(screen.clientWidth / 12);
+    const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF';
+
+    const drops = [];
+    for (let i = 0; i < cols; i++) {
+      drops[i] = Math.floor(Math.random() * -20);
+    }
+
+    for (let frame = 0; frame < 120; frame++) {
+      let frameOutput = '';
+      for (let i = 0; i < cols; i++) {
+        if (drops[i] < 0) {
+          frameOutput += ' ';
+          drops[i]++;
+          continue;
+        }
+
+        const char = chars[Math.floor(Math.random() * chars.length)];
+        const isHead = Math.random() < 0.1;
+        const color = isHead ? 'color:#ffff44' : 'color:#33ff33';
+        const opacity = isHead ? '1' : (0.3 + Math.random() * 0.4).toFixed(2);
+        frameOutput += '<span style="' + color + ';opacity:' + opacity + '">' + char + '</span>';
+
+        if (Math.random() < 0.05) {
+          drops[i] = -2;
+        }
+      }
+      output.innerHTML = frameOutput;
+      scrollBottom();
+      await sleep(60);
+
+      for (let i = 0; i < cols; i++) {
+        drops[i]++;
+      }
+    }
+
+    output.innerHTML = '';
+    const done = addLine('c-green');
+    await typeText(done, 'Matrix simulation complete.', 'c-green', 12);
+    await sleep(300);
+    const tip = addLine('c-amber');
+    await typeText(tip, 'Press any key to return to DAVIDOS...', 'c-amber', 12);
+    await waitForKey();
+
+    output.innerHTML = original;
+    // Re-show prompt in the original state
+    startDOS();
+  }
+
+  // ─── Helper for command output ────────────────────────────────
+
+  async function typeCommandOutput(text, cls = 'c-green') {
+    const l = addLine(cls);
+    l.textContent = text;
+    scrollBottom();
+  }
+
+  // ─── Click to focus ───────────────────────────────────────────
+
+  document.addEventListener('click', () => input.focus());
+  screen.addEventListener('click', () => input.focus());
+
+  // ─── Start ────────────────────────────────────────────────────
+
+  boot();
+})();
+</script>
+</body>
+</html>
